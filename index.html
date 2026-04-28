@@ -3,86 +3,137 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Betting Combo PWA</title>
+  <title>Smart Combo Generator (Manual Input)</title>
   <style>
     body { font-family: Arial; padding: 20px; background:#0f172a; color:white; }
     h1 { text-align:center; }
     .card { background:#1e293b; padding:15px; margin:10px 0; border-radius:10px; }
     input, select { width:100%; padding:10px; margin-top:5px; border-radius:6px; border:none; }
     button { padding:12px; width:100%; margin-top:10px; background:#22c55e; border:none; border-radius:8px; color:white; font-size:16px; }
-    .result { margin-top:20px; font-size:18px; }
+    .result { margin-top:20px; font-size:18px; white-space:pre-line; }
   </style>
 </head>
 <body>
-  <h1>⚽ Smart Combo Generator (~3.0 Odds)</h1>
+  <h1>⚽ Smart Combo Generator (~3.0)</h1>
 
+  <!-- Match Inputs (you enter candidates) -->
   <div class="card">
-    <label>Match 1 Odds</label>
-    <input type="number" id="m1" step="0.01" placeholder="e.g 1.80">
-    <select id="m1type">
-      <option value="dnb">Draw No Bet</option>
-      <option value="plus1">+1 Handicap</option>
-      <option value="minus1">-1 Handicap</option>
-    </select>
+    <label>Match 1 (Teams)</label>
+    <input id="m1name" placeholder="e.g Team A vs Team B">
+    <label>DNB Odds</label>
+    <input type="number" id="m1dnb" step="0.01" placeholder="e.g 1.85">
+    <label>+1 Handicap Odds</label>
+    <input type="number" id="m1p1" step="0.01" placeholder="e.g 1.55">
+    <label>-1 Handicap Odds</label>
+    <input type="number" id="m1m1" step="0.01" placeholder="e.g 1.70">
   </div>
 
   <div class="card">
-    <label>Match 2 Odds</label>
-    <input type="number" id="m2" step="0.01" placeholder="e.g 1.55">
-    <select id="m2type">
-      <option value="dnb">Draw No Bet</option>
-      <option value="plus1">+1 Handicap</option>
-      <option value="minus1">-1 Handicap</option>
-    </select>
+    <label>Match 2 (Teams)</label>
+    <input id="m2name" placeholder="e.g Team C vs Team D">
+    <label>DNB Odds</label>
+    <input type="number" id="m2dnb" step="0.01">
+    <label>+1 Handicap Odds</label>
+    <input type="number" id="m2p1" step="0.01">
+    <label>-1 Handicap Odds</label>
+    <input type="number" id="m2m1" step="0.01">
   </div>
 
   <div class="card">
-    <label>Match 3 Odds (Optional)</label>
-    <input type="number" id="m3" step="0.01" placeholder="e.g 1.30">
-    <select id="m3type">
-      <option value="none">None</option>
-      <option value="dnb">Draw No Bet</option>
-      <option value="plus15">+1.5 Handicap</option>
-    </select>
+    <label>Match 3 (Teams)</label>
+    <input id="m3name" placeholder="optional">
+    <label>DNB Odds</label>
+    <input type="number" id="m3dnb" step="0.01">
+    <label>+1.5 Handicap Odds</label>
+    <input type="number" id="m3p15" step="0.01" placeholder="e.g 1.30">
   </div>
 
-  <button onclick="generate()">Generate Combo</button>
+  <button onclick="run()">Generate Best Combo</button>
 
   <div class="result" id="result"></div>
 
   <script>
-    function isValid(odds, type){
-      if(type === 'dnb') return odds >= 1.7 && odds <= 2.0;
-      if(type === 'plus1') return odds >= 1.4 && odds <= 1.7;
-      if(type === 'minus1') return odds >= 1.5 && odds <= 1.9;
-      if(type === 'plus15') return odds >= 1.25 && odds <= 1.45;
-      return true;
+    // value zones
+    const inRange = (x,a,b)=> x>=a && x<=b;
+
+    function pickForMatch(name, dnb, p1, m1){
+      // priority: DNB (1.7-2.0), +1 (1.4-1.7), -1 (1.5-1.9)
+      if(dnb && inRange(dnb,1.7,2.0)) return {name, market:'DNB', odds:dnb};
+      if(p1 && inRange(p1,1.4,1.7)) return {name, market:'+1 HCP', odds:p1};
+      if(m1 && inRange(m1,1.5,1.9)) return {name, market:'-1 HCP', odds:m1};
+      return null;
     }
 
-    function generate(){
-      let m1 = parseFloat(document.getElementById('m1').value);
-      let m2 = parseFloat(document.getElementById('m2').value);
-      let m3 = parseFloat(document.getElementById('m3').value);
+    function run(){
+      const m1 = pickForMatch(
+        document.getElementById('m1name').value,
+        parseFloat(document.getElementById('m1dnb').value),
+        parseFloat(document.getElementById('m1p1').value),
+        parseFloat(document.getElementById('m1m1').value)
+      );
 
-      let t1 = document.getElementById('m1type').value;
-      let t2 = document.getElementById('m2type').value;
-      let t3 = document.getElementById('m3type').value;
+      const m2 = pickForMatch(
+        document.getElementById('m2name').value,
+        parseFloat(document.getElementById('m2dnb').value),
+        parseFloat(document.getElementById('m2p1').value),
+        parseFloat(document.getElementById('m2m1').value)
+      );
 
-      let valid = isValid(m1,t1) && isValid(m2,t2) && (t3==='none' || isValid(m3,t3));
+      const m3name = document.getElementById('m3name').value;
+      const m3dnb = parseFloat(document.getElementById('m3dnb').value);
+      const m3p15 = parseFloat(document.getElementById('m3p15').value);
+      let m3 = null;
+      if(m3name){
+        if(m3dnb && inRange(m3dnb,1.7,2.0)) m3 = {name:m3name, market:'DNB', odds:m3dnb};
+        else if(m3p15 && inRange(m3p15,1.25,1.45)) m3 = {name:m3name, market:'+1.5 HCP', odds:m3p15};
+      }
 
-      if(!valid){
-        document.getElementById('result').innerText = "❌ No bet today (invalid odds structure)";
+      // collect valid picks
+      let picks = [m1, m2, m3].filter(Boolean);
+
+      if(picks.length < 2){
+        document.getElementById('result').innerText = '❌ No bet today (not enough valid picks)';
         return;
       }
 
-      let total = m1 * m2 * (t3==='none' ? 1 : m3);
+      // try best 2 first
+      let best = null;
+      for(let i=0;i<picks.length;i++){
+        for(let j=i+1;j<picks.length;j++){
+          const total = picks[i].odds * picks[j].odds;
+          if(total>=2.8 && total<=3.3){
+            best = [picks[i], picks[j], total];
+          }
+        }
+      }
 
-      if(total < 2.8 || total > 3.3){
-        document.getElementById('result').innerText = "❌ No bet today (does not meet 3.0 target)";
+      // if not found, try 3-combo
+      if(!best && picks.length===3){
+        const total = picks[0].odds * picks[1].odds * picks[2].odds;
+        if(total>=2.8 && total<=3.3){
+          best = [picks[0], picks[1], picks[2], total];
+        }
+      }
+
+      if(!best){
+        document.getElementById('result').innerText = '❌ No bet today (no valid 3.0 combo)';
         return;
       }
 
-      document.getElementById('result').innerText = `✅ Combo Ready! Total Odds: ${total.toFixed(2)}`;
+      // format output
+      let txt = '✅ TODAY\'S COMBO:\n\n';
+      if(best.length===3){
+        txt += `1. ${best[0].name} → ${best[0].market} (${best[0].odds})\n`;
+        txt += `2. ${best[1].name} → ${best[1].market} (${best[1].odds})\n`;
+        txt += `\nTotal Odds: ${best[2].toFixed(2)}`;
+      } else {
+        txt += `1. ${best[0].name} → ${best[0].market} (${best[0].odds})\n`;
+        txt += `2. ${best[1].name} → ${best[1].market} (${best[1].odds})\n`;
+        txt += `3. ${best[2].name} → ${best[2].market} (${best[2].odds})\n`;
+        txt += `\nTotal Odds: ${best[3].toFixed(2)}`;
+      }
+
+      document.getElementById('result').innerText = txt;
     }
   </script>
 </body>
