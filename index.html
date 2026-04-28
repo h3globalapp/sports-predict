@@ -1,25 +1,60 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#4f46e5" />
-  <meta name="description" content="High-accuracy sports prediction powered by machine learning" />
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-  <title>Sports Predictor Pro</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3.0 Odds Combo Builder</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      min-height: 100vh;
-    }
+    body { font-family: Arial; padding: 20px; background:#0f172a; color:white; }
+    h1 { text-align:center; }
+    .card { background:#1e293b; padding:15px; margin:10px 0; border-radius:10px; }
+    input { width:100%; padding:10px; margin-top:5px; border-radius:6px; border:none; }
+    button { padding:12px; width:100%; margin-top:10px; background:#22c55e; border:none; border-radius:8px; color:white; font-size:16px; }
+    .result { margin-top:20px; font-size:18px; }
   </style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="module" src="/src/main.jsx"></script>
-  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <h1>⚽ Combo Builder (Target 3.0)</h1>
+
+  <div class="card">
+    <label>Draw No Bet Odds</label>
+    <input type="number" id="dnb" step="0.01" placeholder="e.g 1.85">
+  </div>
+
+  <div class="card">
+    <label>Handicap (+1 / -1) Odds</label>
+    <input type="number" id="hcp1" step="0.01" placeholder="e.g 1.55">
+  </div>
+
+  <div class="card">
+    <label>Optional Handicap (+1.5) Odds</label>
+    <input type="number" id="hcp2" step="0.01" placeholder="e.g 1.30">
+  </div>
+
+  <button onclick="calculate()">Calculate Combo</button>
+
+  <div class="result" id="result"></div>
+
+  <script>
+    function calculate(){
+      let dnb = parseFloat(document.getElementById('dnb').value) || 1;
+      let hcp1 = parseFloat(document.getElementById('hcp1').value) || 1;
+      let hcp2 = parseFloat(document.getElementById('hcp2').value) || 1;
+
+      let total = dnb * hcp1 * hcp2;
+
+      let message = "Total Odds: " + total.toFixed(2);
+
+      if(total >= 2.8 && total <= 3.5){
+        message += " ✅ Good Structure";
+      } else if(total < 2.8){
+        message += " ⚠️ Too Low";
+      } else {
+        message += " ⚠️ Too Risky";
+      }
+
+      document.getElementById('result').innerText = message;
+    }
+  </script>
 </body>
 </html>
