@@ -1,15 +1,37 @@
-// 🔧 PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 const historyKey = "ht_history";
 
 //////////////////////////////////////////////////////
-// 🚀 MAIN
+// INSTALL BUTTON
+//////////////////////////////////////////////////////
+let deferredPrompt;
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById("installBtn").style.display = "block";
+});
+
+document.getElementById("installBtn").addEventListener("click", async () => {
+  deferredPrompt.prompt();
+  deferredPrompt = null;
+});
+
+//////////////////////////////////////////////////////
+// SERVICE WORKER
+//////////////////////////////////////////////////////
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./service-worker.js");
+}
+
+//////////////////////////////////////////////////////
+// MAIN
 //////////////////////////////////////////////////////
 async function processPDF() {
   const file = document.getElementById("pdfInput").files[0];
-  if (!file) return alert("Upload PDF first");
+  if (!file) return alert("Upload PDF");
 
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
@@ -19,106 +41,53 @@ async function processPDF() {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const rows = groupByRows(content.items);
 
-    rows.forEach(r => {
-      const line = r.map(i => i.str).join(" ").trim();
-      if (line) lines.push(line);
+    content.items.forEach(item => {
+      if (item.str.trim()) lines.push(item.str.trim());
     });
   }
 
-  const matches = lines.map(parseLineWithOdds).filter(Boolean);
+  const joined = lines.join(" ");
 
-  if (matches.length === 0) {
-    document.getElementById("results").innerHTML =
-      "<p>No matches found.</p>";
-    return;
-  }
+  const matches = extractMatches(joined);
 
   const scored = matches.map(m => {
     const score = scoreMatch(m);
     const confidence = calculateConfidence(score);
-
     return { ...m, score, confidence };
   });
 
-  // 🔥 AUTO-SKIP BELOW 60%
   const filtered = scored.filter(m => m.confidence >= 60);
 
-  if (filtered.length === 0) {
-    document.getElementById("results").innerHTML =
-      "<p>No strong picks today (all below 60%).</p>";
-    return;
-  }
-
-  const top3 = filtered
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+  const top3 = filtered.sort((a, b) => b.score - a.score).slice(0, 3);
 
   saveToday(top3);
   display(top3);
 }
 
 //////////////////////////////////////////////////////
-// 🧠 GROUP ROWS
+// PARSE MATCHES
 //////////////////////////////////////////////////////
-function groupByRows(items) {
-  const rows = {};
-  items.forEach(item => {
-    const y = Math.round(item.transform[5]);
-    if (!rows[y]) rows[y] = [];
-    rows[y].push(item);
-  });
+function extractMatches(text) {
+  const regex = /(\d{1,2}:\d{2})\s(.+?)\s-\s(.+?)\s-\:-\s\[\s*(\d+\.\d+)\s\|\s(\d+\.\d+)\s\|\s(\d+\.\d+)\s\]/g;
 
-  return Object.values(rows).map(r =>
-    r.sort((a, b) => a.transform[4] - b.transform[4])
-  );
+  let matches = [];
+  let m;
+
+  while ((m = regex.exec(text)) !== null) {
+    matches.push({
+      name: `${m[2]} vs ${m[3]}`,
+      homeOdds: parseFloat(m[4]),
+      drawOdds: parseFloat(m[5]),
+      awayOdds: parseFloat(m[6])
+    });
+  }
+
+  return matches;
 }
 
 //////////////////////////////////////////////////////
-// 🎯 PARSE LINE
-//////////////////////////////////////////////////////
-function parseLineWithOdds(line) {
-  if (!line.includes("[") || !line.includes("|")) return null;
-
-  const oddsMatch = line.match(/\[\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\s*\]/);
-  if (!oddsMatch) return null;
-
-  const homeOdds = parseFloat(oddsMatch[1]);
-  const drawOdds = parseFloat(oddsMatch[2]);
-  const awayOdds = parseFloat(oddsMatch[3]);
-
-  let cleanLine = line.replace(/\[.*?\]/, "").trim();
-  cleanLine = cleanLine.replace(/^\d{1,2}:\d{2}\s*/, "");
-  cleanLine = cleanLine.replace("-:-", "").trim();
-
-  const match = cleanLine.match(/(.+?)\s-\s(.+)/);
-  if (!match) return null;
-
-  const teamA = sanitize(match[1]);
-  const teamB = sanitize(match[2]);
-
-  if (!isValidTeam(teamA) || !isValidTeam(teamB)) return null;
-
-  return {
-    name: `${teamA} vs ${teamB}`,
-    homeOdds,
-    drawOdds,
-    awayOdds
-  };
-}
-
-function sanitize(name) {
-  return name.replace(/[^\w\s]/g, "").trim();
-}
-
-function isValidTeam(name) {
-  const bad = ["standings","table","promo","live"];
-  return !bad.some(w => name.toLowerCase().includes(w)) && name.length > 2;
-}
-
-//////////////////////////////////////////////////////
-// 🧠 SCORING
+// SCORING
 //////////////////////////////////////////////////////
 function scoreMatch(m) {
   let score = 0;
@@ -140,26 +109,20 @@ function scoreMatch(m) {
 }
 
 //////////////////////////////////////////////////////
-// 📊 CONFIDENCE
+// CONFIDENCE
 //////////////////////////////////////////////////////
 function calculateConfidence(score) {
-  let min = -5;
-  let max = 10;
-
+  let min = -5, max = 10;
   let normalized = (score - min) / (max - min);
-  let percent = 50 + normalized * 40;
-
-  return Math.max(50, Math.min(90, percent));
+  return Math.max(50, Math.min(90, 50 + normalized * 40));
 }
 
 //////////////////////////////////////////////////////
-// 🧠 LEARNING
+// LEARNING
 //////////////////////////////////////////////////////
 function learningBoost(m) {
   const history = JSON.parse(localStorage.getItem(historyKey)) || [];
-
-  let bonus = 0;
-  let count = 0;
+  let bonus = 0, count = 0;
 
   history.forEach(day => {
     day.picks.forEach(p => {
@@ -171,8 +134,7 @@ function learningBoost(m) {
 
       if (similar) {
         count++;
-        if (p.result === "win") bonus += 1;
-        else bonus -= 1;
+        bonus += p.result === "win" ? 1 : -1;
       }
     });
   });
@@ -181,41 +143,7 @@ function learningBoost(m) {
 }
 
 //////////////////////////////////////////////////////
-// 📊 ODDS ZONE INSIGHT
-//////////////////////////////////////////////////////
-function getOddsInsight() {
-  const history = JSON.parse(localStorage.getItem(historyKey)) || [];
-
-  let zones = {};
-
-  history.forEach(day => {
-    day.picks.forEach(p => {
-      if (!p.result) return;
-
-      const zone = Math.round(p.drawOdds * 10) / 10;
-
-      if (!zones[zone]) zones[zone] = { win: 0, total: 0 };
-
-      zones[zone].total++;
-      if (p.result === "win") zones[zone].win++;
-    });
-  });
-
-  let best = null;
-  let worst = null;
-
-  Object.keys(zones).forEach(z => {
-    const rate = zones[z].win / zones[z].total;
-
-    if (!best || rate > best.rate) best = { z, rate };
-    if (!worst || rate < worst.rate) worst = { z, rate };
-  });
-
-  return { best, worst };
-}
-
-//////////////////////////////////////////////////////
-// 💾 SAVE
+// SAVE
 //////////////////////////////////////////////////////
 function saveToday(picks) {
   const history = JSON.parse(localStorage.getItem(historyKey)) || [];
@@ -229,42 +157,71 @@ function saveToday(picks) {
 }
 
 //////////////////////////////////////////////////////
-// 🖥 DISPLAY
+// ODDS INSIGHT
+//////////////////////////////////////////////////////
+function getInsight() {
+  const history = JSON.parse(localStorage.getItem(historyKey)) || [];
+
+  let zones = {};
+
+  history.forEach(d => {
+    d.picks.forEach(p => {
+      if (!p.result) return;
+
+      const z = Math.round(p.drawOdds * 10) / 10;
+
+      if (!zones[z]) zones[z] = { win: 0, total: 0 };
+
+      zones[z].total++;
+      if (p.result === "win") zones[z].win++;
+    });
+  });
+
+  let best = null, worst = null;
+
+  Object.keys(zones).forEach(z => {
+    const rate = zones[z].win / zones[z].total;
+
+    if (!best || rate > best.rate) best = { z, rate };
+    if (!worst || rate < worst.rate) worst = { z, rate };
+  });
+
+  return { best, worst };
+}
+
+//////////////////////////////////////////////////////
+// DISPLAY
 //////////////////////////////////////////////////////
 function display(picks) {
   const el = document.getElementById("results");
+  const insight = getInsight();
 
-  const insight = getOddsInsight();
-
-  el.innerHTML = `
-    <h2>Top 3 HT Draw Picks</h2>
-    <button onclick="showAccuracy()">Accuracy</button>
-  `;
+  el.innerHTML = "<h2>Top 3 Picks</h2>";
 
   if (insight.best) {
     el.innerHTML += `
-      <p>🔥 Best Odds Zone: ${insight.best.z} (${(insight.best.rate*100).toFixed(0)}%)</p>
-      <p>⚠️ Worst Odds Zone: ${insight.worst.z} (${(insight.worst.rate*100).toFixed(0)}%)</p>
+      <p>🔥 Best Zone: ${insight.best.z}</p>
+      <p>⚠️ Worst Zone: ${insight.worst.z}</p>
     `;
   }
 
   picks.forEach((p, i) => {
     el.innerHTML += `
       <div class="match">
-        <strong>#${i + 1}</strong><br>
+        <b>#${i + 1}</b><br>
         ${p.name}<br>
         Odds: ${p.homeOdds} | ${p.drawOdds} | ${p.awayOdds}<br>
-        🔥 Confidence: ${p.confidence.toFixed(0)}%<br><br>
+        Confidence: ${p.confidence.toFixed(0)}%<br><br>
 
-        <button onclick="setResult(${i}, 'win')">✅ Win</button>
-        <button onclick="setResult(${i}, 'loss')">❌ Loss</button>
+        <button onclick="setResult(${i}, 'win')">Win</button>
+        <button onclick="setResult(${i}, 'loss')">Loss</button>
       </div>
     `;
   });
 }
 
 //////////////////////////////////////////////////////
-// 🎯 RESULT TRACKING
+// RESULT TRACK
 //////////////////////////////////////////////////////
 function setResult(i, result) {
   const history = JSON.parse(localStorage.getItem(historyKey));
@@ -274,26 +231,4 @@ function setResult(i, result) {
 
   localStorage.setItem(historyKey, JSON.stringify(history));
   alert("Saved");
-}
-
-//////////////////////////////////////////////////////
-// 📊 ACCURACY
-//////////////////////////////////////////////////////
-function showAccuracy() {
-  const history = JSON.parse(localStorage.getItem(historyKey)) || [];
-
-  let total = 0, win = 0;
-
-  history.forEach(d => {
-    d.picks.forEach(p => {
-      if (p.result) {
-        total++;
-        if (p.result === "win") win++;
-      }
-    });
-  });
-
-  const acc = total ? ((win / total) * 100).toFixed(1) : 0;
-
-  alert(`Accuracy: ${acc}% (${win}/${total})`);
 }
