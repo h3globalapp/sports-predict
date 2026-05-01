@@ -1,0 +1,8 @@
+{
+  "name": "HT Draw Predictor",
+  "short_name": "HT Picks",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#0b1c2c",
+  "theme_color": "#0b1c2c"
+}

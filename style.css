@@ -1,0 +1,30 @@
+body {
+  font-family: Arial;
+  background: #0b1c2c;
+  color: white;
+  text-align: center;
+}
+
+h1 {
+  margin-top: 20px;
+}
+
+button {
+  padding: 10px 20px;
+  margin: 15px;
+  background: green;
+  border: none;
+  color: white;
+  font-size: 16px;
+}
+
+.match {
+  background: #1e3a5f;
+  margin: 10px;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.rank1 { border-left: 5px solid gold; }
+.rank2 { border-left: 5px solid silver; }
+.rank3 { border-left: 5px solid orange; }
