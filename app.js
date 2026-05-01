@@ -1,4 +1,4 @@
-// 🔧 Fix PDF.js worker error
+// 🔧 Fix PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
@@ -9,94 +9,110 @@ async function processPDF() {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-  let fullText = "";
+  let matches = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const strings = content.items.map(item => item.str);
-    fullText += strings.join(" ") + "\n";
+
+    const rows = groupByRows(content.items);
+
+    rows.forEach(row => {
+      const line = row.map(item => item.str).join(" ").trim();
+
+      const match = parseMatchLine(line);
+      if (match) {
+        matches.push({
+          name: match,
+          score: generateScore(match)
+        });
+      }
+    });
   }
 
-  const matches = extractMatches(fullText);
-  const ranked = rankMatches(matches);
+  console.log("Extracted Matches:", matches);
 
+  if (matches.length === 0) {
+    document.getElementById("results").innerHTML =
+      "<p>No matches detected. Try another PDF.</p>";
+    return;
+  }
+
+  const ranked = rankMatches(matches);
   displayResults(ranked);
 }
 
-// 🔍 Extract matches from text
-function extractMatches(text) {
-  const lines = text.split("\n");
+// 🧠 GROUP ITEMS INTO ROWS (CRITICAL FIX)
+function groupByRows(items) {
+  const rows = {};
 
-  let matches = [];
+  items.forEach(item => {
+    const y = Math.round(item.transform[5]);
 
-  lines.forEach(line => {
-    if (line.includes(" vs ") || line.includes(" - ")) {
-      let clean = line.trim();
-
-      // Basic cleanup
-      clean = clean.replace(/\d{1,2}:\d{2}/g, "").trim();
-
-      matches.push({
-        name: clean,
-        score: generateScore(clean)
-      });
-    }
+    if (!rows[y]) rows[y] = [];
+    rows[y].push(item);
   });
 
-  return matches;
+  return Object.values(rows);
 }
 
-// 🧠 HT DRAW SCORING SYSTEM
-function generateScore(matchName) {
-  let score = 0;
+// 🎯 PARSE MATCH FROM LINE
+function parseMatchLine(line) {
+  line = line.replace(/\d{1,2}:\d{2}/g, "").trim();
 
-  // Heuristics (simulate your strategy)
+  if (line.length < 10) return null;
+  if (/^\d+$/.test(line)) return null;
 
-  // Low scoring league keywords
-  const lowLeagues = ["U19", "Women", "Reserve", "2", "B"];
+  const words = line.split(" ").filter(w => w.length > 2);
 
-  if (!lowLeagues.some(l => matchName.includes(l))) {
-    score += 2;
+  if (words.length >= 4 && words.length <= 10) {
+    const mid = Math.floor(words.length / 2);
+
+    const teamA = words.slice(0, mid).join(" ");
+    const teamB = words.slice(mid).join(" ");
+
+    return `${teamA} vs ${teamB}`;
   }
 
-  // Balanced teams (same length names = rough balance trick)
-  const parts = matchName.split("vs");
+  return null;
+}
+
+// 📊 SIMPLE HT DRAW SCORING
+function generateScore(match) {
+  let score = 0;
+
+  // Balanced teams (length similarity)
+  const parts = match.split("vs");
   if (parts.length === 2) {
     if (Math.abs(parts[0].length - parts[1].length) < 5) {
       score += 2;
     }
   }
 
-  // Random slight variation (simulate unpredictability)
+  // Slight randomness (simulate variability)
   score += Math.random();
 
   return score;
 }
 
-// 📊 Rank matches
+// 📈 RANK TOP 5
 function rankMatches(matches) {
   return matches
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 }
 
-// 🖥 Display results
+// 🖥 DISPLAY RESULTS
 function displayResults(matches) {
   const container = document.getElementById("results");
   container.innerHTML = "<h2>Top 5 HT Draw Picks</h2>";
 
   matches.forEach((m, i) => {
     container.innerHTML += `
-      <div class="match rank${i+1}">
-        <strong>#${i+1}</strong> ${m.name}<br>
-        🎯 HT Draw Probability Score: ${m.score.toFixed(2)}
+      <div class="match">
+        <strong>#${i + 1}</strong> ${m.name}<br>
+        🎯 Score: ${m.score.toFixed(2)}
       </div>
     `;
   });
-}
-
-// 🔄 Register service worker
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("service-worker.js");
 }
