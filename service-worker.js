@@ -1,30 +1,36 @@
-const CACHE_NAME = "ht-app-v1";
+const CACHE_NAME = "ht-app-v2";
 
-const FILES_TO_CACHE = [
+const urlsToCache = [
   "./",
   "./index.html",
-  "./style.css",
   "./app.js",
   "./manifest.json"
 ];
 
+// INSTALL
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(FILES_TO_CACHE);
-    })
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        return Promise.all(
+          urlsToCache.map(url =>
+            fetch(url).then(response => {
+              if (!response.ok) {
+                throw new Error(`Failed: ${url}`);
+              }
+              return cache.put(url, response);
+            })
+          )
+        );
+      })
+      .catch(err => console.error("Cache failed:", err))
   );
-  self.skipWaiting();
 });
 
-self.addEventListener("activate", event => {
-  event.waitUntil(self.clients.claim());
-});
-
+// FETCH
 self.addEventListener("fetch", event => {
   event.respondWith(
-    caches.match(event.request).then(res => {
-      return res || fetch(event.request);
-    })
+    caches.match(event.request)
+      .then(res => res || fetch(event.request))
   );
 });
