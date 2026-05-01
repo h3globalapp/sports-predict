@@ -1,3 +1,7 @@
+// 🔧 Fix PDF.js worker error
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
 async function processPDF() {
   const file = document.getElementById('pdfInput').files[0];
   if (!file) return alert("Upload PDF first");
