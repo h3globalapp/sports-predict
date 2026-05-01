@@ -1,19 +1,21 @@
-// 🔧 Fix PDF.js worker (REQUIRED)
+// 🔧 PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-// 🚀 MAIN FUNCTION
+let currentTopMatches = [];
+
+//////////////////////////////////////////////////////
+// 🚀 MAIN
+//////////////////////////////////////////////////////
 async function processPDF() {
   const file = document.getElementById("pdfInput").files[0];
-  if (!file) {
-    alert("Upload PDF first");
-    return;
-  }
+  if (!file) return alert("Upload PDF first");
 
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
   let matches = [];
+  let currentLeague = "Unknown League";
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
@@ -24,135 +26,272 @@ async function processPDF() {
     rows.forEach(row => {
       const line = row.map(item => item.str).join(" ").trim();
 
-      // 🔍 DEBUG (see what lines look like)
-      console.log("LINE:", line);
+      const league = detectLeague(line);
+      if (league) {
+        currentLeague = league;
+        return;
+      }
 
       const match = parseMatchLine(line);
 
       if (match) {
-        matches.push({
-          name: match,
-          score: generateScore(match)
-        });
+        const score = generateScore(match);
+        if (score > 1) {
+          matches.push({
+            name: match,
+            league: currentLeague,
+            score
+          });
+        }
       }
     });
   }
 
-  console.log("Extracted Matches:", matches);
-
   if (matches.length === 0) {
     document.getElementById("results").innerHTML =
-      "<p>No matches detected. Try another PDF.</p>";
+      "<p>No strong matches found.</p>";
     return;
   }
 
-  const ranked = rankMatches(matches);
-  displayResults(ranked);
+  currentTopMatches = rankMatches(matches);
+  displayInitialResults(currentTopMatches);
 }
 
 //////////////////////////////////////////////////////
-// 🧠 GROUP TEXT INTO ROWS (Y + X SORT FIX)
+// 🧠 GROUP ROWS
 //////////////////////////////////////////////////////
 function groupByRows(items) {
   const rows = {};
 
   items.forEach(item => {
     const y = Math.round(item.transform[5]);
-
     if (!rows[y]) rows[y] = [];
     rows[y].push(item);
   });
 
-  // Sort each row left → right
   return Object.values(rows).map(row =>
     row.sort((a, b) => a.transform[4] - b.transform[4])
   );
 }
 
 //////////////////////////////////////////////////////
-// 🎯 PARSE MATCH FROM LINE (FLASHSCORE FIX)
+// 🏷️ DETECT LEAGUE
+//////////////////////////////////////////////////////
+function detectLeague(line) {
+  if (line.includes(":") && line.toLowerCase().includes("standings")) {
+    return line.replace("Standings", "").trim();
+  }
+  return null;
+}
+
+//////////////////////////////////////////////////////
+// 🎯 PARSE MATCH
 //////////////////////////////////////////////////////
 function parseMatchLine(line) {
-  // Remove time (e.g., 18:00)
   line = line.replace(/\d{1,2}:\d{2}/g, "").trim();
 
-  // Ignore useless lines
   if (line.length < 8) return null;
   if (/^\d+$/.test(line)) return null;
 
-  // Try split by large spacing (common in Flashscore)
   const parts = line.split(/\s{2,}/);
 
   if (parts.length === 2) {
-    const teamA = parts[0].trim();
-    const teamB = parts[1].trim();
-
-    if (teamA.length > 2 && teamB.length > 2) {
-      return `${teamA} vs ${teamB}`;
-    }
+    return `${parts[0].trim()} vs ${parts[1].trim()}`;
   }
 
-  // Fallback: split by words
   const words = line.split(" ").filter(w => w.length > 2);
 
   if (words.length >= 4 && words.length <= 10) {
     const mid = Math.floor(words.length / 2);
-
-    const teamA = words.slice(0, mid).join(" ");
-    const teamB = words.slice(mid).join(" ");
-
-    return `${teamA} vs ${teamB}`;
+    return `${words.slice(0, mid).join(" ")} vs ${words.slice(mid).join(" ")}`;
   }
 
   return null;
 }
 
 //////////////////////////////////////////////////////
-// 📊 HT DRAW SCORING SYSTEM (BASIC FOR NOW)
+// 🧠 SCORING
 //////////////////////////////////////////////////////
 function generateScore(match) {
   let score = 0;
 
-  const parts = match.split("vs");
+  const [teamA, teamB] = match.split("vs").map(t => t.trim());
+  const nameA = teamA.toLowerCase();
+  const nameB = teamB.toLowerCase();
 
-  if (parts.length === 2) {
-    const lenA = parts[0].trim().length;
-    const lenB = parts[1].trim().length;
+  const bad = ["u19","u20","u21","women","reserve","youth"];
+  if (bad.some(k => nameA.includes(k) || nameB.includes(k))) return -10;
 
-    // Balanced teams (important for HT draw)
-    if (Math.abs(lenA - lenB) < 5) {
-      score += 2;
-    }
-  }
+  const diff = Math.abs(teamA.length - teamB.length);
+  if (diff <= 3) score += 4;
+  else if (diff <= 6) score += 2;
+  else score -= 3;
 
-  // Slight randomness (real-world uncertainty)
+  const big = ["real madrid","barcelona","man city","psg","bayern"];
+  if (big.some(t => nameA.includes(t) || nameB.includes(t))) score -= 4;
+
   score += Math.random();
 
   return score;
 }
 
 //////////////////////////////////////////////////////
-// 📈 RANK TOP 5
+// 📊 RANK
 //////////////////////////////////////////////////////
 function rankMatches(matches) {
-  return matches
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
+  return matches.sort((a, b) => b.score - a.score).slice(0, 5);
 }
 
 //////////////////////////////////////////////////////
-// 🖥 DISPLAY RESULTS
+// 🖥 INITIAL DISPLAY
 //////////////////////////////////////////////////////
-function displayResults(matches) {
+function displayInitialResults(matches) {
   const container = document.getElementById("results");
-  container.innerHTML = "<h2>Top 5 HT Draw Picks</h2>";
+
+  container.innerHTML = "<h2>Top 5 Picks (Enter Odds)</h2>";
 
   matches.forEach((m, i) => {
     container.innerHTML += `
       <div class="match">
-        <strong>#${i + 1}</strong> ${m.name}<br>
-        🎯 Score: ${m.score.toFixed(2)}
+        <strong>#${i + 1}</strong><br>
+        ${m.name}<br>
+        <small>${m.league}</small><br><br>
+
+        Home Odds: <input type="number" step="0.01" id="home-${i}"><br>
+        Away Odds: <input type="number" step="0.01" id="away-${i}">
       </div>
     `;
+  });
+
+  container.innerHTML += `<button onclick="refineWithOdds()">Refine Picks</button>`;
+}
+
+//////////////////////////////////////////////////////
+// 🔥 REFINE WITH ODDS
+//////////////////////////////////////////////////////
+function refineWithOdds() {
+  let refined = currentTopMatches.map((m, i) => {
+    const home = parseFloat(document.getElementById(`home-${i}`).value);
+    const away = parseFloat(document.getElementById(`away-${i}`).value);
+
+    let newScore = m.score;
+
+    if (!isNaN(home) && !isNaN(away)) {
+      const diff = Math.abs(home - away);
+
+      if (diff <= 0.3) newScore += 4;
+      else if (diff <= 0.6) newScore += 2;
+      else newScore -= 3;
+
+      if (home < 1.5 || away < 1.5) newScore -= 4;
+    }
+
+    return { ...m, score: newScore, result: null };
+  });
+
+  refined.sort((a, b) => b.score - a.score);
+
+  saveResults(refined);
+  displayFinalResults(refined);
+}
+
+//////////////////////////////////////////////////////
+// 💾 SAVE PICKS
+//////////////////////////////////////////////////////
+function saveResults(matches) {
+  const today = new Date().toLocaleDateString();
+  const history = JSON.parse(localStorage.getItem("ht_history")) || [];
+
+  history.push({
+    date: today,
+    picks: matches
+  });
+
+  localStorage.setItem("ht_history", JSON.stringify(history));
+}
+
+//////////////////////////////////////////////////////
+// 🏁 FINAL DISPLAY WITH RESULT BUTTONS
+//////////////////////////////////////////////////////
+function displayFinalResults(matches) {
+  const container = document.getElementById("results");
+
+  container.innerHTML = `
+    <h2>Final HT Draw Picks</h2>
+    <button onclick="viewHistory()">View History</button>
+    <button onclick="calculateAccuracy()">Show Accuracy</button>
+  `;
+
+  matches.forEach((m, i) => {
+    container.innerHTML += `
+      <div class="match">
+        <strong>#${i + 1}</strong><br>
+        ${m.name}<br>
+        <small>${m.league}</small><br><br>
+
+        <button onclick="setResult(${i}, 'win')">✅ Win</button>
+        <button onclick="setResult(${i}, 'loss')">❌ Loss</button>
+      </div>
+    `;
+  });
+}
+
+//////////////////////////////////////////////////////
+// 🎯 SET RESULT
+//////////////////////////////////////////////////////
+function setResult(index, result) {
+  const history = JSON.parse(localStorage.getItem("ht_history"));
+  const lastDay = history[history.length - 1];
+
+  lastDay.picks[index].result = result;
+
+  localStorage.setItem("ht_history", JSON.stringify(history));
+  alert("Saved!");
+}
+
+//////////////////////////////////////////////////////
+// 📊 CALCULATE ACCURACY
+//////////////////////////////////////////////////////
+function calculateAccuracy() {
+  const history = JSON.parse(localStorage.getItem("ht_history")) || [];
+
+  let total = 0;
+  let wins = 0;
+
+  history.forEach(day => {
+    day.picks.forEach(p => {
+      if (p.result) {
+        total++;
+        if (p.result === "win") wins++;
+      }
+    });
+  });
+
+  const accuracy = total ? ((wins / total) * 100).toFixed(1) : 0;
+
+  alert(`Accuracy: ${accuracy}% (${wins}/${total})`);
+}
+
+//////////////////////////////////////////////////////
+// 📜 VIEW HISTORY
+//////////////////////////////////////////////////////
+function viewHistory() {
+  const container = document.getElementById("results");
+  const history = JSON.parse(localStorage.getItem("ht_history")) || [];
+
+  container.innerHTML = "<h2>History</h2>";
+
+  history.forEach(day => {
+    container.innerHTML += `<h3>${day.date}</h3>`;
+
+    day.picks.forEach(p => {
+      container.innerHTML += `
+        <div class="match">
+          ${p.name}<br>
+          <small>${p.league}</small><br>
+          <small>Result: ${p.result || "Pending"}</small>
+        </div>
+      `;
+    });
   });
 }
