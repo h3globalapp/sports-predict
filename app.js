@@ -20,7 +20,6 @@ async function processPDF() {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-
     const rows = groupByRows(content.items);
 
     rows.forEach(row => {
@@ -34,8 +33,13 @@ async function processPDF() {
 
       const match = parseMatchLine(line);
 
-      if (match) {
+      if (
+        match &&
+        isValidMatch(match) &&
+        isAllowedLeague(currentLeague)
+      ) {
         const score = generateScore(match);
+
         if (score > 1) {
           matches.push({
             name: match,
@@ -49,7 +53,7 @@ async function processPDF() {
 
   if (matches.length === 0) {
     document.getElementById("results").innerHTML =
-      "<p>No strong matches found.</p>";
+      "<p>No Bet9ja-supported matches found.</p>";
     return;
   }
 
@@ -85,28 +89,90 @@ function detectLeague(line) {
 }
 
 //////////////////////////////////////////////////////
-// 🎯 PARSE MATCH
+// 🎯 MATCH PARSER
 //////////////////////////////////////////////////////
 function parseMatchLine(line) {
   line = line.replace(/\d{1,2}:\d{2}/g, "").trim();
 
-  if (line.length < 8) return null;
-  if (/^\d+$/.test(line)) return null;
+  if (/\d+\s*[:\-]\s*\d+/.test(line)) return null;
+  if (line.length < 10) return null;
+
+  let match = line.match(/(.+?)\s+(vs|-)\s+(.+)/i);
+
+  if (match) {
+    const teamA = cleanTeam(match[1]);
+    const teamB = cleanTeam(match[3]);
+
+    if (isRealTeam(teamA) && isRealTeam(teamB)) {
+      return `${teamA} vs ${teamB}`;
+    }
+  }
 
   const parts = line.split(/\s{2,}/);
 
   if (parts.length === 2) {
-    return `${parts[0].trim()} vs ${parts[1].trim()}`;
-  }
+    const teamA = cleanTeam(parts[0]);
+    const teamB = cleanTeam(parts[1]);
 
-  const words = line.split(" ").filter(w => w.length > 2);
-
-  if (words.length >= 4 && words.length <= 10) {
-    const mid = Math.floor(words.length / 2);
-    return `${words.slice(0, mid).join(" ")} vs ${words.slice(mid).join(" ")}`;
+    if (isRealTeam(teamA) && isRealTeam(teamB)) {
+      return `${teamA} vs ${teamB}`;
+    }
   }
 
   return null;
+}
+
+//////////////////////////////////////////////////////
+// 🧼 CLEAN TEAM
+//////////////////////////////////////////////////////
+function cleanTeam(name) {
+  return name.replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+//////////////////////////////////////////////////////
+// 🧠 TEAM VALIDATION
+//////////////////////////////////////////////////////
+function isRealTeam(name) {
+  const lower = name.toLowerCase();
+
+  const banned = [
+    "standings","table","group","round",
+    "play off","relegation",
+    "gamble","therapy","responsibly",
+    "promo","live","virtual"
+  ];
+
+  if (banned.some(w => lower.includes(w))) return false;
+  if (name.length < 3 || name.length > 40) return false;
+  if (/^\d+$/.test(name)) return false;
+
+  return true;
+}
+
+//////////////////////////////////////////////////////
+// ✅ VALID MATCH
+//////////////////////////////////////////////////////
+function isValidMatch(match) {
+  const [a, b] = match.split("vs").map(t => t.trim());
+  return a && b && a !== b;
+}
+
+//////////////////////////////////////////////////////
+// 🔥 BET9JA LEAGUE FILTER
+//////////////////////////////////////////////////////
+function isAllowedLeague(league) {
+  if (!league) return false;
+
+  const allowed = [
+    "england","spain","italy","germany","france",
+    "netherlands","portugal","belgium","turkey",
+    "brazil","argentina","sweden","norway","denmark",
+    "international"
+  ];
+
+  const lower = league.toLowerCase();
+
+  return allowed.some(a => lower.includes(a));
 }
 
 //////////////////////////////////////////////////////
@@ -123,6 +189,7 @@ function generateScore(match) {
   if (bad.some(k => nameA.includes(k) || nameB.includes(k))) return -10;
 
   const diff = Math.abs(teamA.length - teamB.length);
+
   if (diff <= 3) score += 4;
   else if (diff <= 6) score += 2;
   else score -= 3;
@@ -143,155 +210,20 @@ function rankMatches(matches) {
 }
 
 //////////////////////////////////////////////////////
-// 🖥 INITIAL DISPLAY
+// 🖥 DISPLAY (same as before)
 //////////////////////////////////////////////////////
 function displayInitialResults(matches) {
   const container = document.getElementById("results");
 
-  container.innerHTML = "<h2>Top 5 Picks (Enter Odds)</h2>";
+  container.innerHTML = "<h2>Top 5 Bet9ja Picks</h2>";
 
   matches.forEach((m, i) => {
     container.innerHTML += `
       <div class="match">
         <strong>#${i + 1}</strong><br>
         ${m.name}<br>
-        <small>${m.league}</small><br><br>
-
-        Home Odds: <input type="number" step="0.01" id="home-${i}"><br>
-        Away Odds: <input type="number" step="0.01" id="away-${i}">
+        <small>${m.league}</small><br>
       </div>
     `;
-  });
-
-  container.innerHTML += `<button onclick="refineWithOdds()">Refine Picks</button>`;
-}
-
-//////////////////////////////////////////////////////
-// 🔥 REFINE WITH ODDS
-//////////////////////////////////////////////////////
-function refineWithOdds() {
-  let refined = currentTopMatches.map((m, i) => {
-    const home = parseFloat(document.getElementById(`home-${i}`).value);
-    const away = parseFloat(document.getElementById(`away-${i}`).value);
-
-    let newScore = m.score;
-
-    if (!isNaN(home) && !isNaN(away)) {
-      const diff = Math.abs(home - away);
-
-      if (diff <= 0.3) newScore += 4;
-      else if (diff <= 0.6) newScore += 2;
-      else newScore -= 3;
-
-      if (home < 1.5 || away < 1.5) newScore -= 4;
-    }
-
-    return { ...m, score: newScore, result: null };
-  });
-
-  refined.sort((a, b) => b.score - a.score);
-
-  saveResults(refined);
-  displayFinalResults(refined);
-}
-
-//////////////////////////////////////////////////////
-// 💾 SAVE PICKS
-//////////////////////////////////////////////////////
-function saveResults(matches) {
-  const today = new Date().toLocaleDateString();
-  const history = JSON.parse(localStorage.getItem("ht_history")) || [];
-
-  history.push({
-    date: today,
-    picks: matches
-  });
-
-  localStorage.setItem("ht_history", JSON.stringify(history));
-}
-
-//////////////////////////////////////////////////////
-// 🏁 FINAL DISPLAY WITH RESULT BUTTONS
-//////////////////////////////////////////////////////
-function displayFinalResults(matches) {
-  const container = document.getElementById("results");
-
-  container.innerHTML = `
-    <h2>Final HT Draw Picks</h2>
-    <button onclick="viewHistory()">View History</button>
-    <button onclick="calculateAccuracy()">Show Accuracy</button>
-  `;
-
-  matches.forEach((m, i) => {
-    container.innerHTML += `
-      <div class="match">
-        <strong>#${i + 1}</strong><br>
-        ${m.name}<br>
-        <small>${m.league}</small><br><br>
-
-        <button onclick="setResult(${i}, 'win')">✅ Win</button>
-        <button onclick="setResult(${i}, 'loss')">❌ Loss</button>
-      </div>
-    `;
-  });
-}
-
-//////////////////////////////////////////////////////
-// 🎯 SET RESULT
-//////////////////////////////////////////////////////
-function setResult(index, result) {
-  const history = JSON.parse(localStorage.getItem("ht_history"));
-  const lastDay = history[history.length - 1];
-
-  lastDay.picks[index].result = result;
-
-  localStorage.setItem("ht_history", JSON.stringify(history));
-  alert("Saved!");
-}
-
-//////////////////////////////////////////////////////
-// 📊 CALCULATE ACCURACY
-//////////////////////////////////////////////////////
-function calculateAccuracy() {
-  const history = JSON.parse(localStorage.getItem("ht_history")) || [];
-
-  let total = 0;
-  let wins = 0;
-
-  history.forEach(day => {
-    day.picks.forEach(p => {
-      if (p.result) {
-        total++;
-        if (p.result === "win") wins++;
-      }
-    });
-  });
-
-  const accuracy = total ? ((wins / total) * 100).toFixed(1) : 0;
-
-  alert(`Accuracy: ${accuracy}% (${wins}/${total})`);
-}
-
-//////////////////////////////////////////////////////
-// 📜 VIEW HISTORY
-//////////////////////////////////////////////////////
-function viewHistory() {
-  const container = document.getElementById("results");
-  const history = JSON.parse(localStorage.getItem("ht_history")) || [];
-
-  container.innerHTML = "<h2>History</h2>";
-
-  history.forEach(day => {
-    container.innerHTML += `<h3>${day.date}</h3>`;
-
-    day.picks.forEach(p => {
-      container.innerHTML += `
-        <div class="match">
-          ${p.name}<br>
-          <small>${p.league}</small><br>
-          <small>Result: ${p.result || "Pending"}</small>
-        </div>
-      `;
-    });
   });
 }
